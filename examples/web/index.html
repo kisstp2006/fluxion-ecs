@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Fluxion ECS in the browser</title>
+<style>
+  body { font: 14px/1.5 system-ui, sans-serif; margin: 2rem; color: #222; background: #f6f6f6; }
+  canvas { border: 1px solid #999; display: block; margin: 1rem 0; background: #14121a; }
+  code { background: #eaeaea; padding: 0 .3em; border-radius: 3px; }
+  button { font: inherit; padding: .2em .8em; }
+  #stats { font-variant-numeric: tabular-nums; white-space: pre-line; }
+</style>
+</head>
+<body>
+<h1>Fluxion ECS, with no threads at all</h1>
+<p>
+  The same world, the same query and the same <code>each</code> as the native
+  demo, compiled to <code>wasm32-freestanding</code>. There are no threads
+  here, so the scheduler has no workers and every chunk of rows runs on the
+  animation frame that asked for it. Nothing in the library is compiled out.
+</p>
+<p>
+  <label>Entities <select id="count">
+    <option>2000</option>
+    <option selected>10000</option>
+    <option>50000</option>
+  </select></label>
+  <button id="restart">Restart</button>
+  <button id="save">Save the world</button>
+  <button id="load">Throw it away and load it back</button>
+</p>
+<canvas id="view" width="800" height="480"></canvas>
+<p id="stats">loading…</p>
+
+<script type="module">
+  const canvas = document.getElementById("view");
+  const ctx = canvas.getContext("2d");
+  const stats = document.getElementById("stats");
+  const chooser = document.getElementById("count");
+
+  const { instance } = await WebAssembly.instantiateStreaming(fetch("fluxion-ecs-web.wasm"), {});
+  const wasm = instance.exports;
+
+  let last = performance.now();
+  let frames = 0, accumulated = 0, worst = 0;
+  let savedBytes = 0, note = "";
+
+  function restart() {
+    wasm.start(Number(chooser.value), canvas.width, canvas.height);
+    frames = 0; accumulated = 0; worst = 0; savedBytes = 0; note = "";
+  }
+
+  function draw() {
+    const now = performance.now();
+    const delta = Math.min((now - last) / 1000, 0.05);
+    last = now;
+
+    const before = performance.now();
+    const drawn = wasm.frame(delta);
+    const spent = performance.now() - before;
+    accumulated += spent;
+    worst = Math.max(worst, spent);
+    frames += 1;
+
+    // Read the points straight out of wasm memory: x, y, r, g, b each.
+    const points = new Float32Array(wasm.memory.buffer, wasm.pointsPtr(), drawn * 5);
+    ctx.fillStyle = "#14121a";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    for (let i = 0; i < drawn; i += 1) {
+      const at = i * 5;
+      ctx.fillStyle = `rgb(${points[at + 2]},${points[at + 3]},${points[at + 4]})`;
+      ctx.fillRect(points[at], points[at + 1], 2, 2);
+    }
+
+    // Every fifteenth frame, and the first, so a page that only gets a few
+    // still says something.
+    if (frames === 1 || frames % 15 === 0) {
+      stats.textContent =
+        `${wasm.entityCount()} entities in ${wasm.archetypes()} archetypes, ` +
+        `${(wasm.columnBytes() / 1048576).toFixed(2)} MiB of columns\n` +
+        `${wasm.workers()} workers — the step takes ${(accumulated / frames).toFixed(2)} ms ` +
+        `on average, ${worst.toFixed(2)} ms at worst\n` + note;
+    }
+    requestAnimationFrame(draw);
+  }
+
+  document.getElementById("restart").addEventListener("click", restart);
+  chooser.addEventListener("change", restart);
+
+  document.getElementById("save").addEventListener("click", () => {
+    savedBytes = wasm.save();
+    note = savedBytes === 0 ? "saving failed" : `saved: ${savedBytes} bytes`;
+  });
+
+  document.getElementById("load").addEventListener("click", () => {
+    if (savedBytes === 0) { note = "nothing saved yet"; return; }
+    const back = wasm.load();
+    note = back === 0
+      ? "loading failed"
+      : `loaded ${back} entities back out of ${savedBytes} bytes`;
+  });
+
+  restart();
+  requestAnimationFrame(draw);
+</script>
+</body>
+</html>

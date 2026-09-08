@@ -1,0 +1,34 @@
+// SPDX-License-Identifier: BSD-3-Clause
+
+.{
+    .name = .fluxion_ecs,
+    .version = "0.1.0",
+    .minimum_zig_version = "0.16.0",
+    .fingerprint = 0x469c769e78c50b62,
+    .dependencies = .{
+        .fluxion_id = .{
+            .url = "git+https://github.com/kisstp2006/fluxion-id#64a04a156031a5d87ead8ce9d4fdb8c78f21ef30",
+            .hash = "fluxion_id-0.1.0--9Hv-nGFAQAW36SvJvMB6L1nUNErZzh7JC0-nRPlrotw",
+        },
+        .fluxion_mem = .{
+            .url = "git+https://github.com/kisstp2006/fluxion-mem#537b8832ddcbb5336c7ec0dbb77f8736c0f64447",
+            .hash = "fluxion_mem-0.1.0-zVFCErF0AgBD4CZsvnjS3WeCvc3OGjV6k6BLTasgoBCk",
+        },
+        .fluxion_data = .{
+            .url = "git+https://github.com/kisstp2006/fluxion-data#7e743d4992f38cd4306987f815e482e8ff7bb6a0",
+            .hash = "fluxion_data-0.1.0-kueVImYWAQA_3QibWNa_ijStnbVzEBuJaw8sRbLHLM_T",
+        },
+        .fluxion_jobs = .{
+            .url = "git+https://github.com/kisstp2006/fluxion-jobs#e064fb3129f9324b139d7ecbcf75cbd99787dad9",
+            .hash = "fluxion_jobs-0.1.0-FBQYG6HWAAD3RZ_geJ6O5O0UmfH666aT_-DuMCVqJiN1",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "examples",
+        "README.md",
+        "LICENSE",
+    },
+}
