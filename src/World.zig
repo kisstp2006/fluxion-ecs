@@ -60,6 +60,11 @@ by_signature: std.HashMapUnmanaged(
     SignatureContext,
     std.hash_map.default_max_load_percentage,
 ) = .empty,
+/// Counts every change to which entities there are and what each is made
+/// of: a spawn, a despawn, a component added or taken off. Something kept
+/// beside the world - an index into it - is out of date once this has moved
+/// since it was built. Writing a component's value does not move it.
+structure: u64 = 0,
 
 pub const Error = error{
     /// More component types than one world may know. See
@@ -137,6 +142,7 @@ pub fn spawn(self: *World) Error!Entity {
     const handle = try self.entities.add(self.gpa, .{ .archetype = empty, .row = 0 });
     const row = self.archetypes.items[empty].appendUndefined(handle);
     self.entities.get(handle).?.row = @intCast(row);
+    self.structure +%= 1;
     return handle;
 }
 
@@ -171,6 +177,7 @@ pub fn spawnWith(self: *World, values: anytype) Error!Entity {
         const value = @field(values, field.name);
         archetype.columnOf(ids[i]).?.set(row, @ptrCast(&value));
     }
+    self.structure +%= 1;
     return handle;
 }
 
@@ -189,6 +196,7 @@ pub fn spawnRaw(self: *World, ids: []const component.Id) Error!Entity {
     const handle = try self.entities.add(self.gpa, .{ .archetype = at, .row = 0 });
     const row = archetype.appendUndefined(handle);
     self.entities.get(handle).?.row = @intCast(row);
+    self.structure +%= 1;
     return handle;
 }
 
@@ -219,6 +227,7 @@ pub fn despawn(self: *World, e: Entity) void {
     const record = (self.entities.get(e) orelse return).*;
     self.removeRow(record);
     _ = self.entities.remove(e);
+    self.structure +%= 1;
 }
 
 /// Take a row out of its archetype and fix up whoever was moved into it.
@@ -329,6 +338,7 @@ fn moveTo(self: *World, e: Entity, record: Record, id: component.Id, how: Direct
     self.removeRow(record);
     const updated: Record = .{ .archetype = target_at, .row = @intCast(row) };
     self.entities.get(e).?.* = updated;
+    self.structure +%= 1;
     return updated;
 }
 

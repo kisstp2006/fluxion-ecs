@@ -57,6 +57,42 @@ test "an entity is born with nothing and takes what it is given" {
     try testing.expectEqual(@as(usize, 1), world.count());
 }
 
+test "the structure count moves with what entities there are and what they are made of, not with a value" {
+    var world: World = .init(gpa);
+    defer world.deinit();
+    var seen = world.structure;
+
+    const e = try world.spawn();
+    try testing.expect(world.structure != seen);
+    seen = world.structure;
+    const f = try world.spawnWith(.{Position{ .x = 0, .y = 0 }});
+    try testing.expect(world.structure != seen);
+    seen = world.structure;
+
+    try world.add(e, Health{ .points = 3 });
+    try testing.expect(world.structure != seen);
+    seen = world.structure;
+
+    // A value written, whether by `add` over one it has or by `get`, is not
+    // a change of shape.
+    try world.add(e, Health{ .points = 4 });
+    world.get(f, Position).?.x = 9;
+    try testing.expectEqual(seen, world.structure);
+
+    try world.remove(e, Health);
+    try testing.expect(world.structure != seen);
+    seen = world.structure;
+    // Taking off one it has not got changes nothing.
+    try world.remove(e, Health);
+    try testing.expectEqual(seen, world.structure);
+
+    world.despawn(f);
+    try testing.expect(world.structure != seen);
+    seen = world.structure;
+    world.despawn(f);
+    try testing.expectEqual(seen, world.structure);
+}
+
 test "components come and go, and the others stay where they were" {
     var world: World = .init(gpa);
     defer world.deinit();
