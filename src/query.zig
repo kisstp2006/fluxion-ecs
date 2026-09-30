@@ -99,6 +99,11 @@ pub fn Query(comptime types: anytype) type {
             entities: []const Entity,
             /// The first row of each component's column, in query order.
             bases: [arity][*]u8,
+            /// Where the rows are: what `optional` reads the rest from.
+            world: *World,
+            archetype: *Archetype,
+            /// The archetype's row the first of these is.
+            first: usize,
 
             /// How many rows.
             pub fn len(self: Chunk) usize {
@@ -112,6 +117,19 @@ pub fn Query(comptime types: anytype) type {
                 return typed[0..self.entities.len];
             }
 
+            /// This chunk's values of `T`, a component the query does not
+            /// ask for, when its rows have one; null when they have not.
+            /// What a walk reads of what only some of the entities it finds
+            /// have - a parent, a material - a chunk at a time, rather than
+            /// looking it up for each row.
+            pub fn optional(self: Chunk, comptime T: type) ?[]T {
+                component.check(T);
+                const id = self.world.findId(T) orelse return null;
+                const column = self.archetype.columnOf(id) orelse return null;
+                const typed: [*]T = @ptrCast(@alignCast(column.bytes.ptr));
+                return typed[self.first..][0..self.entities.len];
+            }
+
             /// Rows `from` up to `to` of this chunk, as a chunk of their own.
             /// What splitting the work across jobs is made of.
             pub fn part(self: Chunk, from: usize, to: usize) Chunk {
@@ -120,7 +138,13 @@ pub fn Query(comptime types: anytype) type {
                 inline for (0..arity) |i| {
                     bases[i] = self.bases[i] + from * @sizeOf(TypeAt(i));
                 }
-                return .{ .entities = self.entities[from..to], .bases = bases };
+                return .{
+                    .entities = self.entities[from..to],
+                    .bases = bases,
+                    .world = self.world,
+                    .archetype = self.archetype,
+                    .first = self.first + from,
+                };
             }
         };
 
@@ -146,7 +170,7 @@ pub fn Query(comptime types: anytype) type {
                     inline for (0..arity) |i| {
                         bases[i] = archetype.columnOf(self.ids[i]).?.bytes.ptr;
                     }
-                    return .{ .entities = archetype.entities.items, .bases = bases };
+                    return .{ .entities = archetype.entities.items, .bases = bases, .world = self.world, .archetype = archetype, .first = 0 };
                 }
                 return null;
             }
@@ -335,4 +359,32 @@ test "a chunk splits into parts that cover it exactly once" {
     try testing.expectEqual(@as(usize, 10), covered);
     // 0+1+...+9
     try testing.expectEqual(@as(f32, 45), total);
+}
+
+test "a chunk reads a component the query does not ask for, where its rows have one" {
+    var world: World = .init(testing.allocator);
+    defer world.deinit();
+
+    for (0..6) |i| {
+        _ = try world.spawnWith(.{ Position{ .x = @floatFromInt(i), .y = 0 }, Velocity{ .x = @floatFromInt(i * 10), .y = 0 } });
+    }
+    _ = try world.spawnWith(.{Position{ .x = 99, .y = 0 }});
+
+    const Places = Query(.{Position});
+    var it = try Places.over(&world);
+    var with: usize = 0;
+    var without: usize = 0;
+    while (it.next()) |chunk| {
+        if (chunk.optional(Velocity)) |velocities| {
+            for (chunk.slice(Position), velocities) |p, v| try testing.expectEqual(p.x * 10, v.x);
+            with += chunk.len();
+            // A part reads its own rows of it.
+            const part = chunk.part(2, 5);
+            const rows = part.optional(Velocity).?;
+            try testing.expectEqual(@as(usize, 3), rows.len);
+            try testing.expectEqual(part.slice(Position)[0].x * 10, rows[0].x);
+        } else without += chunk.len();
+    }
+    try testing.expectEqual(@as(usize, 6), with);
+    try testing.expectEqual(@as(usize, 1), without);
 }
