@@ -6,7 +6,7 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const mod = module(b, target, optimize);
+    const mod = module(b, target, optimize, .exported);
 
     // zig build test
     const tests = b.addTest(.{ .name = "fluxion-ecs-tests", .root_module = mod });
@@ -40,7 +40,7 @@ pub fn build(b: *std.Build) void {
     // wasm32-freestanding whatever -Dtarget says, because that is the only
     // target a browser loads.
     const wasm_target = b.resolveTargetQuery(.{ .cpu_arch = .wasm32, .os_tag = .freestanding });
-    const wasm_mod = module(b, wasm_target, .ReleaseSmall);
+    const wasm_mod = module(b, wasm_target, .ReleaseSmall, .private);
     const web_mod = b.createModule(.{
         .root_source_file = b.path("examples/web.zig"),
         .target = wasm_target,
@@ -76,15 +76,17 @@ fn module(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
+    /// `.private` for the browser example's, which is built for wasm whatever
+    /// the target and must not take the name a consumer - one built for a
+    /// browser too - asks for.
+    kind: enum { exported, private },
 ) *std.Build.Module {
     const ident = b.dependency("fluxion_id", .{ .target = target, .optimize = optimize });
     const memory = b.dependency("fluxion_mem", .{ .target = target, .optimize = optimize });
     const data = b.dependency("fluxion_data", .{ .target = target, .optimize = optimize });
     const jobs = b.dependency("fluxion_jobs", .{ .target = target, .optimize = optimize });
 
-    return b.addModule(b.fmt("fluxion_ecs{s}", .{
-        if (target.result.cpu.arch == .wasm32) "_wasm" else "",
-    }), .{
+    const options: std.Build.Module.CreateOptions = .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
         .optimize = optimize,
@@ -94,5 +96,6 @@ fn module(
             .{ .name = "fluxion_data", .module = data.module("fluxion_data") },
             .{ .name = "fluxion_jobs", .module = jobs.module("fluxion_jobs") },
         },
-    });
+    };
+    return if (kind == .exported) b.addModule("fluxion_ecs", options) else b.createModule(options);
 }
